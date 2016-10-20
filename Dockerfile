@@ -1,79 +1,58 @@
-# =============================================================================
-# naqoda/centos-apache-php
-#
-# CentOS-7, Apache 2.2, PHP 5.5, Ioncube, MYSQL, DB2
-#
-# =============================================================================
-FROM centos:centos6
+FROM php:apache
 
-# update system
-RUN yum -y update
-
-# Install HTTPD
-RUN yum install httpd -y
-
-# Install repo
-RUN rpm -Uvh http://mirror.webtatic.com/yum/el6/latest.rpm
-
-# -----------------------------------------------------------------------------
-# UTC Timezone & Networking
-# -----------------------------------------------------------------------------
-RUN ln -sf /usr/share/zoneinfo/UTC /etc/localtime \
-    && echo "NETWORKING=yes" > /etc/sysconfig/network
-
-# -----------------------------------------------------------------------------
-# Purge - this removes localedef
-# -----------------------------------------------------------------------------
-RUN rm -rf /etc/ld.so.cache \ 
-    ; rm -rf /sbin/sln \
-    ; rm -rf /usr/{{lib,share}/locale,share/{man,doc,info,gnome/help,cracklib,il8n},{lib,lib64}/gconv,bin/localedef,sbin/build-locale-archive} \
-    ; rm -rf /{root,tmp,var/cache/{ldconfig,yum}}/* \
-    ; > /etc/sysconfig/i18n
-
-# -----------------------------------------------------------------------------
-# Apache
-# -----------------------------------------------------------------------------
-RUN yum --setopt=tsflags=nodocs -y install \
+RUN apt-get update && apt-get install -y cron \
     unzip \
-    mod_ssl \
-    && rm -rf /var/cache/yum/* \
-    && yum clean all
+    libaio-dev \
+    php5-dev \
+    supervisor \
+    wget \
+    python-pip && \
+    pip install supervisor-stdout
 
-# -----------------------------------------------------------------------------
-# PHP
-# -----------------------------------------------------------------------------
+ENV ALLOW_OVERRIDE=true
+ENV APACHE_LOG_DIR=/var/log/apache2/
 
-RUN yum --setopt=tsflags=nodocs -y install \
-    php56w-opcache \
-    php56w-devel \
-    php56w \
-    php56w-cli \
-    php56w-mysql \
-    php56w-pdo \
-    php56w-mbstring \
-    php56w-soap \
-    php56w-gd \
-    php56w-xml \
-    php56w-pecl-apcu \
-    && rm -rf /var/cache/yum/* \
-    && yum clean all
+# install oracle conector
+ADD oracle/instantclient-basic-linux.x64-12.1.0.2.0.zip /tmp/
+ADD oracle/instantclient-sdk-linux.x64-12.1.0.2.0.zip /tmp/
 
-# -----------------------------------------------------------------------------
-# Set locale
-# -----------------------------------------------------------------------------
-# RUN rpm -qf /usr/bin/localedef
-# RUN yum provides '*/localedef'
-# RUN localedef -i pt_BR -c -f UTF-8 -A /usr/share/locale/locale.alias pt_BR.UTF-8
-# ENV LANG pt_BR.utf8
+RUN unzip /tmp/instantclient-basic-linux.x64-12.1.0.2.0.zip -d /usr/local/
+RUN unzip /tmp/instantclient-sdk-linux.x64-12.1.0.2.0.zip -d /usr/local/
 
-# -----------------------------------------------------------------------------
-# Set ports
-# -----------------------------------------------------------------------------
-EXPOSE 80 443
+RUN ln -s /usr/local/instantclient_12_1 /usr/local/instantclient
+RUN ln -s /usr/local/instantclient/libclntsh.so.12.1 /usr/local/instantclient/libclntsh.so
 
-# -----------------------------------------------------------------------------
-# Copy files into place
-# -----------------------------------------------------------------------------
-ADD index.php /var/www/html/index.php
+RUN echo 'instantclient,/usr/local/instantclient' | pecl install oci8
 
-CMD ["/usr/sbin/httpd", "-DFOREGROUND"]
+# Copy php ini with extension oci8
+COPY config/php.ini /usr/local/etc/php/
+
+# Restart apache
+RUN a2enmod rewrite
+
+RUN service apache2 restart
+
+# Add crontab file in the cron directory
+ADD config/crontab /etc/cron.d/importador
+
+# Give execution rights on the cron job
+RUN chmod 0644 /etc/cron.d/importador
+
+# add to crontab
+RUN crontab /etc/cron.d/importador
+
+# Create the log file to be able to run tail
+RUN touch /var/log/cron.log
+
+# Copy files over
+ADD ./ /var/www/html
+
+WORKDIR /var/www/html
+
+# Change mod
+RUN chmod 777 -R /var/www/html
+
+CMD /usr/bin/supervisord -c config/supervisord.conf
+
+EXPOSE 80
+
