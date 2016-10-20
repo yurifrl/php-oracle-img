@@ -1,0 +1,10 @@
+version: '2'
+services:
+  web:
+    ports:
+      - 8000:80
+    image: yurifl/php-image
+    build:
+      context: .
+      dockerfile: Dockerfile
+
