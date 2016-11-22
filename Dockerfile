@@ -1,13 +1,8 @@
 FROM php:apache
 
-RUN apt-get update && apt-get install -y cron \
-    unzip \
+RUN apt-get update && apt-get install -y unzip \
     libaio-dev \
-    php5-dev \
-    supervisor \
-    wget \
-    python-pip && \
-    pip install supervisor-stdout
+    php5-dev
 
 ENV ALLOW_OVERRIDE=true
 ENV APACHE_LOG_DIR=/var/log/apache2/
@@ -30,29 +25,16 @@ COPY config/php.ini /usr/local/etc/php/
 # Restart apache
 RUN a2enmod rewrite
 
-RUN service apache2 restart
-
-# Add crontab file in the cron directory
-ADD config/crontab /etc/cron.d/importador
-
-# Give execution rights on the cron job
-RUN chmod 0644 /etc/cron.d/importador
-
-# add to crontab
-RUN crontab /etc/cron.d/importador
-
-# Create the log file to be able to run tail
-RUN touch /var/log/cron.log
-
-# Copy files over
-ADD ./ /var/www/html
+RUN service apache2 stop
 
 WORKDIR /var/www/html
 
-# Change mod
-RUN chmod 777 -R /var/www/html
+# Copy files over
+ONBUILD ADD ./ /var/www/html
 
-CMD /usr/bin/supervisord -c config/supervisord.conf
+# Change mod
+ONBUILD RUN chmod 777 -R /var/www/html
 
 EXPOSE 80
 
+CMD ["apache2-foreground"]
